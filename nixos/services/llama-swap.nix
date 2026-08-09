@@ -108,9 +108,11 @@ in
       example = lib.literalExpression "inputs.self.packages.x86_64-linux.llama-cpp-cuda";
     };
 
+    # 既定は loopback。llama-swap は認証を持たず、モデルの実行そのものを外部に
+    # 委ねる口なので、LAN へ出すかどうかはホスト側の明示的な選択にする。
     host = lib.mkOption {
       type = lib.types.str;
-      default = "0.0.0.0";
+      default = "127.0.0.1";
       description = "リッスンアドレス (LAN 公開時は 0.0.0.0)。";
     };
 

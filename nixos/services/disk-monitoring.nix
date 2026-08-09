@@ -106,9 +106,11 @@ in
       description = "監視対象 disk のリスト。";
     };
 
+    # 既定は false。smartctl_exporter は認証を持たないので、どのネットワークへ
+    # 晒すかはホスト側が決める (monitoring.openFirewall と同じ方針)。
     openFirewall = lib.mkOption {
       type = lib.types.bool;
-      default = true;
+      default = false;
       description = "smartctl_exporter のポートをファイアウォールで開放するか。";
     };
   };

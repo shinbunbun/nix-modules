@@ -173,9 +173,13 @@ in
     };
 
     # ファイアウォール設定
+    #
+    # 既定は false。exporter は認証を持たないので、どのネットワークへ晒すかは
+    # モジュールではなくホスト側が決める。enable しただけで全インターフェースに
+    # 開くと、公開の意思表示なしに口が開く。
     openFirewall = mkOption {
       type = types.bool;
-      default = true;
+      default = false;
       description = "Open firewall ports for enabled exporters (Node Exporter and/or Process Exporter)";
     };
   };
