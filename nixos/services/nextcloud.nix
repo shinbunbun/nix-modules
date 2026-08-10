@@ -4,13 +4,19 @@
   機能:
   - ファイルの同期・共有（WebDAV対応）
   - nginxによるWebサーバー自動設定
-  - カスタムポートでのリッスン（デフォルト80を回避）
 
   設定:
   - shared/config.nix の nextcloud セクションで有効化
   - hostName は nextcloud.domain から取得
-  - nginx のリッスンポートは nextcloud.port でカスタマイズ
   - adminpassFile 等のシークレットはホスト固有設定で注入
+
+  ここで決めないこと:
+  - nginx のリッスンアドレスとポート
+  - ファイアウォールの開放
+    どのネットワークへ晒すかは利用側の判断。enable しただけで平文 HTTP が
+    全インターフェースに出る状態にはしない。ホスト側で
+    services.nginx.virtualHosts.<domain>.listen と
+    networking.firewall.allowedTCPPorts を指定する。
 */
 {
   lib,
@@ -21,7 +27,6 @@
 }:
 let
   cfg = sharedConfig;
-  port = cfg.nextcloud.port;
   domain = cfg.nextcloud.domain;
 in
 {
@@ -41,17 +46,5 @@ in
       # 最大アップロードサイズ
       maxUploadSize = "10G";
     };
-
-    # nginxのリッスンポートをカスタマイズ
-    # NixOSのnextcloudモジュールが自動生成するvirtualHostのデフォルトポート(80)を上書き
-    services.nginx.virtualHosts.${domain}.listen = [
-      {
-        addr = "0.0.0.0";
-        port = port;
-      }
-    ];
-
-    # ファイアウォール: カスタムポートを許可
-    networking.firewall.allowedTCPPorts = [ port ];
   };
 }

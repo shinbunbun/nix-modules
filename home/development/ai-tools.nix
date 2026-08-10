@@ -8,6 +8,11 @@
   - uv: Python ツールランナー（mcp-server-motherduck を uvx で起動するため）
   - duckdb: DuckDB CLI（S3 互換ストレージ上の Parquet をローカルで確認するため）
   - nodejs: Node.js ランタイム（argoproj-labs/mcp-for-argocd を npx で起動するため）
+
+  トークンはここで配らない:
+  - github-mcp-server が要求する GITHUB_PERSONAL_ACCESS_TOKEN を対話シェルへ
+    export すると、そのシェルの全子プロセスが環境変数として読める。MCP を
+    起動する経路 (プロジェクトの .envrc / .mcp.json の env) でのみ渡す。
 */
 { pkgs, ... }:
 {
@@ -19,12 +24,6 @@
     duckdb
     nodejs_22
   ];
-
-  programs.zsh.initExtra = ''
-    if command -v gh &>/dev/null; then
-      export GITHUB_PERSONAL_ACCESS_TOKEN="$(gh auth token 2>/dev/null)"
-    fi
-  '';
 
   home.file.".claude/statusline.sh" = {
     source = ./claude-statusline.sh;
