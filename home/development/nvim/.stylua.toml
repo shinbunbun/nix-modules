@@ -1,0 +1,12 @@
+# この配下の Lua 設定を整形するときの規則。
+# stylua の既定はタブ + 幅 4 だが、周囲の Nix ファイルに合わせてスペース 2 にする。
+# nvim/lua/ の外にあるので、xdg.configFile で配置されるツリーには含まれない。
+indent_type = "Spaces"
+indent_width = 2
+
+# 日本語のコメントと desc を含むので既定の 120 では折り返しが多発する
+column_width = 160
+
+# keymaps.lua を「1 行 1 キー」の表として読めるようにする。
+# 既定では function() foo() end が 3 行に展開されてしまい、一覧性が失われる。
+collapse_simple_statement = "FunctionOnly"
