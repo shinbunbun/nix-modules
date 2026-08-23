@@ -24,7 +24,7 @@ in
 {
   # SOPS シークレット
   sops.secrets."deploy_ssh_public_key" = {
-    sopsFile = "${inputs.self}/secrets/deploy.yaml";
+    sopsFile = "${inputs.self}/${cfg.sops.files.deploy}";
     mode = "0444";
   };
 

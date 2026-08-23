@@ -11,6 +11,12 @@
 
   設定:
   - TCP 445 でリッスン（hosts allow/denyでアクセス制御）
+
+  ここで決めないこと:
+  - ファイアウォールの開放 (services.samba.openFirewall /
+    services.samba-wsdd.openFirewall)。hosts allow/deny で絞ってはいるが、
+    二重防御の一枚目をモジュールが勝手に開けない。enable しただけでは開かない
+    ので、どのネットワークへ晒すかはホスト側で明示すること。
 */
 {
   config,
@@ -35,8 +41,6 @@ in
   # グローバル設定（macOS互換、hosts allow 等）を適用
   config = lib.mkIf config.services.samba.enable {
     services.samba = {
-      openFirewall = true;
-
       settings = {
         global = {
           workgroup = workgroup;
@@ -80,7 +84,6 @@ in
     # WS-Discovery（macOS/Windowsからの自動検出）
     services.samba-wsdd = {
       enable = true;
-      openFirewall = true; # discovery用ポートはLAN内で開放
     };
   };
 }

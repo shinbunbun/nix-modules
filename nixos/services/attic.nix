@@ -33,7 +33,7 @@ in
   # SOPS シークレット設定
   sops.secrets = {
     "attic_jwt_secret_base64" = {
-      sopsFile = "${inputs.self}/secrets/attic.yaml";
+      sopsFile = "${inputs.self}/${cfg.sops.files.attic}";
       # atticdユーザーはservices.atticdで動的に作成されるため、rootが所有
       owner = "root";
       group = "root";

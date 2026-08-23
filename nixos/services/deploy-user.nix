@@ -28,7 +28,7 @@ in
 {
   # SOPS シークレット設定（既存のsecurity.nixと同じアプローチ）
   sops.secrets."deploy_ssh_public_key" = {
-    sopsFile = "${inputs.self}/secrets/deploy.yaml";
+    sopsFile = "${inputs.self}/${cfg.sops.files.deploy}";
     # /etc/ssh/authorized_keys.d/%u にファイルを配置（SSHdが自動的に読み取る）
     path = "/etc/ssh/authorized_keys.d/${cfg.deploy.user}";
     owner = cfg.deploy.user;

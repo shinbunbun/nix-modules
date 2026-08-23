@@ -24,7 +24,7 @@ let
   cfg = sharedConfig;
 in
 sopsWireGuardHelper.mkSopsWireGuardConfig { inherit config pkgs lib; } {
-  sopsFile = "${inputs.self}/secrets/wireguard.yaml";
+  sopsFile = "${inputs.self}/${cfg.sops.files.wireguard}";
   privateKeyPath = cfg.wireguard.nixos.privateKeyPath;
   publicKeyPath = cfg.wireguard.nixos.publicKeyPath;
   interfaceName = cfg.wireguard.nixos.interfaceName;

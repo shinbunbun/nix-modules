@@ -82,8 +82,10 @@ let
         url = "https://${argocdCfg.domain}";
         # KSOPS（Kustomize + SOPS）プラグインを有効化
         "kustomize.buildOptions" = "--enable-alpha-plugins --enable-exec";
-        # Web Terminal（exec）機能を有効化
-        "exec.enabled" = "true";
+        # Web Terminal（exec）機能。有効にするかは値レイヤの判断。
+        # 上の kustomize.buildOptions の --enable-exec とは別物で、
+        # あちらは KSOPS の exec plugin なので外すと SOPS 復号が止まる。
+        "exec.enabled" = if argocdCfg.webTerminal then "true" else "false";
         # 利用可能なシェルの優先順位（Linux Podのみ想定）
         "exec.shells" = "bash,sh";
         # Dex を無効化（外部 OIDC を直接使用）
@@ -105,7 +107,7 @@ let
         # ローカル apiKey アカウント: MCP for ArgoCD (Claude Code) 用
         # OIDC を介さず、長寿命 Bearer token で API を叩くためのサービスアカウント。
         # トークン発行は `argocd account generate-token --account mcp` で 1 回行い、
-        # 利用側リポジトリの SOPS (secrets/argocd.yaml) に保管する想定。
+        # 利用側リポジトリの SOPS (配置は sops.files.argocd) に保管する想定。
         # 権限は下の policy.csv の role:mcp で applications/projects の get/sync/action/
         # create/update に限定（delete は意図的に付与しない）。
         "accounts.mcp" = "apiKey";
@@ -138,7 +140,8 @@ let
           g, ${cfg.argocd.rbac.userGroup}, role:app-manager
           g, mcp, role:mcp
         '';
-        "policy.default" = "role:readonly";
+        # ロール未割り当ての認証済みユーザーに何を許すか。値レイヤの判断。
+        "policy.default" = argocdCfg.rbac.defaultPolicy;
         "scopes" = "[groups]";
       };
 
@@ -260,32 +263,32 @@ in
   # SOPS シークレット定義
   sops.secrets = {
     "argocd/oidc_client_id" = {
-      sopsFile = "${inputs.self}/secrets/argocd.yaml";
+      sopsFile = "${inputs.self}/${cfg.sops.files.argocd}";
       owner = "root";
       group = "root";
       mode = "0400";
     };
     "argocd/oidc_client_secret" = {
-      sopsFile = "${inputs.self}/secrets/argocd.yaml";
+      sopsFile = "${inputs.self}/${cfg.sops.files.argocd}";
       owner = "root";
       group = "root";
       mode = "0400";
     };
     "argocd/github_deploy_key" = {
-      sopsFile = "${inputs.self}/secrets/argocd.yaml";
+      sopsFile = "${inputs.self}/${cfg.sops.files.argocd}";
       owner = "root";
       group = "root";
       mode = "0400";
     };
     "argocd/ghcr_pat" = {
-      sopsFile = "${inputs.self}/secrets/argocd.yaml";
+      sopsFile = "${inputs.self}/${cfg.sops.files.argocd}";
       owner = "root";
       group = "root";
       mode = "0400";
     };
     # k8s専用Age秘密鍵（KSOPS復号用、ArgoCD repo-serverに投入）
     "k8s/age_key" = {
-      sopsFile = "${inputs.self}/secrets/k8s-age-key.yaml";
+      sopsFile = "${inputs.self}/${cfg.sops.files.k8sAgeKey}";
       owner = "root";
       group = "root";
       mode = "0400";
