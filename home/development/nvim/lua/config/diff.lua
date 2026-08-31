@@ -76,9 +76,8 @@ require("diffview").setup({
   },
 
   hooks = {
-    -- 差分ペインは options.lua の nowrap を引き継ぐので、長い行が右端で切れて
-    -- 変更箇所ごと画面外に消える。折り返すと左右の行が縦に揃わなくなるが、
-    -- 「見えない」より「ずれる」を採る。ずれが邪魔なときは <leader>uw で戻せる。
+    -- 折り返すと左右の行が縦に揃わなくなるが、差分では「見えない」より
+    -- 「ずれる」を採る。<leader>uw で左右まとめて戻せる。
     diff_buf_win_enter = function(_, winid, _)
       vim.wo[winid].wrap = true
       vim.wo[winid].linebreak = true

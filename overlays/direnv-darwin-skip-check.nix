@@ -21,7 +21,7 @@ final: prev:
 let
   inherit (prev) lib stdenv;
 in
-lib.optionalAttrs stdenv.isDarwin {
+lib.optionalAttrs stdenv.hostPlatform.isDarwin {
   direnv = prev.direnv.overrideAttrs (_: {
     doCheck = false;
   });
