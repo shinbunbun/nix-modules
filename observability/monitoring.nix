@@ -1,21 +1,3 @@
-/*
-  監視システム設定モジュール
-
-  このモジュールは Node Exporter と Process Exporter を設定します。
-  メトリクス収集・アラート評価・通知は k3s クラスタの VictoriaMetrics スタック
-  (VMCluster, VMAgent, VMAlert, VMAlertmanager) に移管済み。
-  NixOS 側では各ホストがスクレイプ対象として exporter を提供するのみ。
-
-  提供する設定:
-  - services.observability.monitoring.enable           モジュール全体の有効化
-  - services.observability.monitoring.nodeExporter.*   Node Exporter (ホスト全体メトリクス)
-  - services.observability.monitoring.processExporter.* Process Exporter (プロセス別メトリクス)
-  - services.observability.monitoring.openFirewall      exporter ポートのファイアウォール開放
-
-  nodeExporter と processExporter は独立して enable 可能。
-  (既に services.prometheus.exporters.node を直書きしているホストは
-   nodeExporter.enable = false にして processExporter だけ利用できる)
-*/
 {
   config,
   pkgs,
@@ -30,7 +12,6 @@ in
   options.services.observability.monitoring = {
     enable = mkEnableOption "Node Exporter and Process Exporter for system and per-process metrics";
 
-    # Node Exporter設定
     nodeExporter = {
       enable = mkOption {
         type = types.bool;
@@ -76,10 +57,8 @@ in
         description = "Extra command-line flags for Node Exporter";
       };
 
-      # ethtool collector は node_exporter の既定では無効なため、明示的に
-      # 有効化する必要がある。enabledCollectors / extraFlags を直接いじると
-      # ホスト側で既定の一覧を再列挙する羽目になるので、専用オプションとして
-      # 切り出して collector とフラグの両方をここで組み立てる。
+      # enabledCollectors / extraFlags を直接いじるとホスト側で既定の一覧を
+      # 再列挙する羽目になるので、専用オプションとして切り出す
       ethtool = {
         enable = mkOption {
           type = types.bool;
@@ -108,12 +87,10 @@ in
       };
     };
 
-    # Process Exporter 設定 (プロセス別 CPU/メモリ等)
     processExporter = {
       enable = mkOption {
         type = types.bool;
-        # nodeExporter と異なり opt-in。既存ホストの挙動を変えないため default false。
-        default = false;
+        default = false; # nodeExporter と異なり opt-in。既存ホストの挙動を変えないため
         description = "Enable Process Exporter (ncabatoff/process-exporter) for per-process metrics";
       };
 
@@ -154,10 +131,8 @@ in
           }
         );
         default = [
-          # 実行ファイル名 (comm) ごとに集約する。top の COMMAND 列に相当。
-          # /nix/store パスは exe basename ではなく comm を使うことで剥がれる。
-          # cmdline = [ ".+" ] で cmdline を持つ全プロセスにマッチ
-          # (cmdline が空のカーネルスレッドは除外される)。
+          # comm ごとに集約 (top の COMMAND 列相当)。/nix/store パスは exe ではなく
+          # comm を使うことで剥がれる。cmdline=[".+"] でカーネルスレッドを除外する
           {
             name = "{{.Comm}}";
             cmdline = [ ".+" ];
@@ -172,11 +147,8 @@ in
       };
     };
 
-    # ファイアウォール設定
-    #
-    # 既定は false。exporter は認証を持たないので、どのネットワークへ晒すかは
-    # モジュールではなくホスト側が決める。enable しただけで全インターフェースに
-    # 開くと、公開の意思表示なしに口が開く。
+    # 既定は false。exporter は認証を持たないので、どのネットワークへ
+    # 晒すかはホスト側が決める (monitoring.openFirewall と同じ方針)。
     openFirewall = mkOption {
       type = types.bool;
       default = false;
@@ -185,7 +157,6 @@ in
   };
 
   config = mkIf cfg.enable {
-    # Node Exporter設定
     services.prometheus.exporters.node = mkIf cfg.nodeExporter.enable {
       enable = true;
       port = cfg.nodeExporter.port;
@@ -194,7 +165,7 @@ in
         cfg.nodeExporter.enabledCollectors ++ optional cfg.nodeExporter.ethtool.enable "ethtool";
 
       # device-include は devices を指定したときだけ付ける。
-      # 空のまま付けると "^()$" になって全インタフェースが除外されてしまう。
+      # 空のまま付けると "^()$" になって全インタフェースが除外されてしまう
       extraFlags =
         cfg.nodeExporter.extraFlags
         ++ optional (
@@ -202,29 +173,21 @@ in
         ) "--collector.ethtool.device-include=^(${concatStringsSep "|" cfg.nodeExporter.ethtool.devices})$";
     };
 
-    # Process Exporter設定
     services.prometheus.exporters.process = mkIf cfg.processExporter.enable {
       enable = true;
       port = cfg.processExporter.port;
-      # submodule 化で未設定フィールドが null になるため、null を除いてから
-      # process_names に渡す (従来の types.anything 時と同一の YAML を生成する)。
+      # submodule 化で未設定フィールドが null になるため、null を除いてから渡す
       settings.process_names = map (
         entry: filterAttrs (_: v: v != null) entry
       ) cfg.processExporter.processNames;
     };
 
-    # ファイアウォール設定 (有効な exporter のポートだけ開放)
     networking.firewall.allowedTCPPorts =
       (optional (cfg.openFirewall && cfg.nodeExporter.enable) cfg.nodeExporter.port)
       ++ (optional (cfg.openFirewall && cfg.processExporter.enable) cfg.processExporter.port);
 
-    # システムパッケージ (CLI 診断用に意図的に PATH へ載せる)
-    #
-    # nixpkgs の services.prometheus.exporters.{node,process} モジュールは
-    # systemd service の ExecStart で store パスを直接叩くだけで、exporter
-    # バイナリを environment.systemPackages へは追加しない。そのため
-    # この行は重複ではなく、`node_exporter --help` 等を手元で実行して
-    # collector/flag を確認するための診断用に PATH へ載せる目的。
+    # nixpkgs の exporters モジュールはバイナリを environment.systemPackages へ
+    # 追加しないため、`node_exporter --help` 等の手元診断用に明示的に載せる
     environment.systemPackages =
       (optional cfg.nodeExporter.enable pkgs.prometheus-node-exporter)
       ++ (optional cfg.processExporter.enable pkgs.prometheus-process-exporter);

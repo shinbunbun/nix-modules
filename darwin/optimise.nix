@@ -1,16 +1,4 @@
-/*
-  Darwin最適化設定
-
-  macOS用のNixストア最適化設定を提供します：
-  - 自動最適化
-  - 週次ガベージコレクション
-*/
-{
-  config,
-  lib,
-  pkgs,
-  ...
-}:
+_:
 
 {
   # https://wiki.nixos.org/wiki/Storage_optimization

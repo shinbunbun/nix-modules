@@ -1,15 +1,3 @@
-/*
-  Darwin用デプロイ専用ユーザー設定モジュール
-
-  CI/CDからの自動デプロイ用ユーザー設定を提供します：
-  - deploy ユーザーの SSH 公開鍵認証（activation script 経由）
-  - Nix trusted-user 権限
-  - NOPASSWD sudo 権限（deploy-rs の activation に必要）
-
-  前提条件:
-  - deploy ユーザーは macOS 上で手動作成が必要（dscl コマンド）
-  - SSH 公開鍵は SOPS で管理
-*/
 {
   config,
   lib,
@@ -22,16 +10,14 @@ let
   deployUser = cfg.deploy.user;
 in
 {
-  # SOPS シークレット
   sops.secrets."deploy_ssh_public_key" = {
     sopsFile = "${inputs.self}/${cfg.sops.files.deploy}";
     mode = "0444";
   };
 
-  # SSH authorized_keys を activation script で配置
-  # nix-darwin の keyFiles はビルド時にファイルを読むため、SOPS ランタイムパスが使えない
+  # nix-darwin の keyFiles はビルド時にファイルを読むため、SOPS ランタイムパスが使えず
+  # activation script で配置する
   system.activationScripts.postActivation.text = lib.mkAfter ''
-    # deploy ユーザーの SSH authorized_keys を SOPS シークレットから配置
     if [ -d /Users/${deployUser} ]; then
       mkdir -p /Users/${deployUser}/.ssh
       cp ${config.sops.secrets."deploy_ssh_public_key".path} /Users/${deployUser}/.ssh/authorized_keys
@@ -39,9 +25,8 @@ in
       chmod 700 /Users/${deployUser}/.ssh
       chmod 600 /Users/${deployUser}/.ssh/authorized_keys
 
-      # deploy ユーザーのログインシェルを /bin/zsh に設定
       # ssh-ng:// プロトコルでの nix-daemon 実行時に /etc/zshenv が読まれ、
-      # Nix の PATH（/run/current-system/sw/bin 等）が設定されるために必要
+      # Nix の PATH (/run/current-system/sw/bin 等) が設定されるために必要
       currentShell=$(dscl . -read /Users/${deployUser} UserShell 2>/dev/null | awk '{print $2}')
       if [ "$currentShell" != "/bin/zsh" ]; then
         echo "Setting deploy user shell to /bin/zsh (was: $currentShell)"
@@ -50,10 +35,8 @@ in
     fi
   '';
 
-  # Nix trusted-user 設定
   nix.settings.trusted-users = [ deployUser ];
 
-  # NOPASSWD sudo（sudoers.d に配置）
   environment.etc."sudoers.d/deploy" = {
     text = "${deployUser} ALL=(ALL) NOPASSWD: ALL";
   };

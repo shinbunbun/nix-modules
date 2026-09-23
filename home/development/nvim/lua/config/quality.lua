@@ -1,18 +1,10 @@
--- 静的解析 (nvim-lint) と整形 (conform)。
---
--- LSP が出す診断は「そのファイル単体で分かること」に限られるので、
--- statix / shellcheck / yamllint / actionlint のような外部リンタを重ねる。
--- どれも extraPackages 経由で Neovim のラッパー内の PATH にだけ入っている。
--- (deadnix は nixd と指摘が重複するため意図的に外している。下の
---  linters_by_ft のコメントを参照)
-
--- ── 整形 (conform.nvim) ─────────────────────────────────────────────────
+-- LSP の診断はファイル単体でしか分からないため、statix / shellcheck / yamllint /
+-- actionlint のような外部リンタを重ねる (extraPackages 経由で Neovim の PATH にのみ入る)
 local conform = require("conform")
 
--- 保存時に自動整形する言語。
--- YAML / Terraform / JSON / Markdown をここに入れていないのは意図的。
--- 既存ファイルが整形済みとは限らず、1 文字直すつもりが全行差分になって
--- レビュー対象の変更が埋もれるため。これらは <Space>cf で手動整形する。
+-- 保存時に自動整形する言語。YAML/Terraform/JSON/Markdown は含めない。
+-- 既存ファイルが整形済みとは限らず、1文字の変更が全行差分になって
+-- レビュー対象を埋もれさせるため (<Space>cf で手動整形する)
 local FORMAT_ON_SAVE = {
   nix = true,
   lua = true,
@@ -30,12 +22,9 @@ conform.setup({
     sh = { "shfmt" },
     bash = { "shfmt" },
     go = { "gofumpt" },
-    -- rustfmt のバイナリは extraPackages に入れていない (editors.nix 参照)。
-    -- Rust の devshell に入っていれば PATH 経由で拾われ、この定義がそのまま効く。
-    -- devshell の外では conform が rustfmt を「利用不可」と判定し、
-    -- 下の lsp_format = "fallback" により rust-analyzer の整形へ落ちる。
-    -- ただし rust-analyzer は documentRangeFormattingProvider = false なので、
-    -- その場合ビジュアル範囲を選んでの整形はできない (ファイル全体のみ)。
+    -- rustfmt は extraPackages に無い。devshell の PATH にあれば使われ、
+    -- 無ければ conform が lsp_format=fallback で rust-analyzer に整形を委ねる
+    -- (rust-analyzer は範囲指定の整形に非対応、ファイル全体のみ)
     rust = { "rustfmt" },
     python = { "ruff_organize_imports", "ruff_format" },
     terraform = { "hclfmt" },
@@ -57,22 +46,18 @@ conform.setup({
   end,
 })
 
--- ── リンタ (nvim-lint) ──────────────────────────────────────────────────
 local lint = require("lint")
 
 lint.linters_by_ft = {
-  -- deadnix は入れない。nixd に内蔵の nixf が
-  -- 「未使用の let 束縛」「未使用の引数」を既に報告するので、
-  -- 併用すると同じ行に同じ指摘が 2 つ並ぶ (実測で確認済み)。
-  -- statix は nixd が見ない書き方の問題 (入れ子の let in、余分な括弧など) を
-  -- 拾うので、こちらは重複しない。
+  -- deadnix は入れない (nixd 内蔵の nixf と同じ指摘が重複する)。
+  -- statix は nixd が見ない書き方の問題 (入れ子の let in、余分な括弧など) を拾う
   nix = { "statix" },
   sh = { "shellcheck" },
   bash = { "shellcheck" },
 }
 
--- yamllint の既定ルールは行長やインデントに厳しく、k8s マニフェストでは
--- ほぼ全行が警告になる。実害のあるものだけ残す
+-- yamllint の既定ルールは k8s マニフェストではほぼ全行が警告になるため、
+-- 実害のあるものだけ残す
 lint.linters.yamllint.args = {
   "--format",
   "parsable",
@@ -116,10 +101,9 @@ vim.api.nvim_create_autocmd({ "BufWritePost", "BufReadPost", "InsertLeave" }, {
   end,
 })
 
--- ── k8s マニフェストの検証 ──────────────────────────────────────────────
--- kubeconform は nvim-lint に組み込みが無く、CRD を含むリポジトリでは
--- -ignore-missing-schemas を付けないと未知の型で全部落ちる。
--- 自動実行だとノイズになるので明示コマンドにしてある。
+-- kubeconform は nvim-lint に組み込みが無い。CRD を含むリポジトリでは
+-- -ignore-missing-schemas が無いと未知の型で全部落ちるため付ける。
+-- 自動実行はノイズになるので明示コマンドにしてある
 vim.api.nvim_create_user_command("KubeCheck", function()
   local file = vim.api.nvim_buf_get_name(0)
   if file == "" then
@@ -141,14 +125,12 @@ vim.api.nvim_create_user_command("KubeCheck", function()
     return
   end
 
-  -- kubeconform の text 出力は行番号を持たないので、既定の errorformat に
-  -- 流すとファイルにすら飛べない。ファイル名だけは自前で埋めて
-  -- quickfix から <CR> で開けるようにする。
+  -- kubeconform の text 出力は行番号を持たないので、既定の errorformat では
+  -- ファイルにすら飛べない。ファイル名だけ自前で埋めて quickfix から開けるようにする
   local items = {}
   for _, line in ipairs(out) do
     if line ~= "" then
-      -- lnum = 1 にしておく。0 だと quickfix の項目が valid = 0 になり、
-      -- 行番号欄が空欄で表示される (ジャンプ自体はどちらでも 1 行目に飛ぶ)。
+      -- lnum = 1 にする (0 だと quickfix の項目が invalid になり行番号欄が空欄になる)
       items[#items + 1] = { filename = file, lnum = 1, text = (line:gsub("^" .. vim.pesc(file) .. "%s*%-%s*", "")) }
     end
   end
@@ -156,7 +138,6 @@ vim.api.nvim_create_user_command("KubeCheck", function()
   vim.cmd("copen")
 end, { desc = "現在のファイルを kubeconform で検証する" })
 
--- ── 手動整形コマンド ────────────────────────────────────────────────────
 vim.api.nvim_create_user_command("Format", function(args)
   local range = nil
   if args.count ~= -1 then

@@ -1,11 +1,8 @@
--- 見た目と、キーを覚えなくても操作できるようにする仕掛け。
---
 -- vim のキーバインドは覚える必要が無い、という状態を目指している:
 --   - <Space> を押すと which-key がメニューを出す (日本語)
 --   - <Space>? で基本操作のチートシート
 --   - マウスは全部効く (options.lua)
 
--- ── 配色 ────────────────────────────────────────────────────────────────
 require("tokyonight").setup({
   style = "night",
   styles = { comments = { italic = false } },
@@ -19,9 +16,8 @@ require("tokyonight").setup({
 })
 vim.cmd.colorscheme("tokyonight")
 
--- ── snacks (picker / explorer / lazygit / 通知 など) ────────────────────
 -- telescope + fzf-lua + toggleterm + nvim-notify + indent-blankline を
--- 個別に入れる代わりに 1 つで賄う。管理対象のプラグインが減る。
+-- 個別に入れる代わりに 1 つで賄う
 require("snacks").setup({
   bigfile = { enabled = true }, -- 巨大ファイルで構文解析を切って固まらないようにする
   quickfile = { enabled = true },
@@ -40,7 +36,6 @@ require("snacks").setup({
   scroll = { enabled = false }, -- SSH 越しだとスムーススクロールは重い
 })
 
--- ── ステータスライン ────────────────────────────────────────────────────
 require("lualine").setup({
   options = {
     theme = "tokyonight",
@@ -53,11 +48,9 @@ require("lualine").setup({
     lualine_c = { { "filename", path = 1 } },
     lualine_x = { "filetype" },
   },
-  -- quickfix / trouble のウィンドウでは専用の表示に切り替える
   extensions = { "quickfix", "trouble" },
 })
 
--- ── 診断一覧 ────────────────────────────────────────────────────────────
 require("trouble").setup({
   focus = true,
   warn_no_results = false,
@@ -67,8 +60,6 @@ require("trouble").setup({
 require("todo-comments").setup({ signs = true })
 require("nvim-autopairs").setup({ check_ts = true })
 
--- ── which-key ───────────────────────────────────────────────────────────
--- キーを押しかけたところでメニューが出る。実質これがキーバインド表。
 local wk = require("which-key")
 wk.setup({
   preset = "helix",

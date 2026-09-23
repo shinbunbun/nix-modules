@@ -1,18 +1,3 @@
-/*
-  Attic Binary Cache Server設定モジュール
-
-  このモジュールはNix Binary Cacheサーバーを提供します：
-  - PostgreSQL + ローカルストレージによるバックエンド
-  - peer認証によるセキュアなDB接続
-  - チャンクベースの重複排除
-  - 自動ガベージコレクション（30日保持）
-  - Cloudflare Tunnel経由での公開
-  - JWT認証によるアクセス制御
-
-  使用方法:
-  - CIからプッシュ: attic push main <path>
-  - 各マシンで利用: nix.settings.substituters に追加
-*/
 {
   config,
   pkgs,
@@ -30,7 +15,6 @@ let
   dbUser = cfg.attic.database.user;
 in
 {
-  # SOPS シークレット設定
   sops.secrets = {
     "attic_jwt_secret_base64" = {
       sopsFile = "${inputs.self}/${cfg.sops.files.attic}";
@@ -41,7 +25,6 @@ in
     };
   };
 
-  # SOPS テンプレート設定
   sops.templates."attic/env" = {
     content = ''
       ATTIC_SERVER_TOKEN_RS256_SECRET_BASE64=${config.sops.placeholder."attic_jwt_secret_base64"}
@@ -53,7 +36,6 @@ in
     mode = "0400";
   };
 
-  # PostgreSQL設定（peer認証）
   services.postgresql = {
     enable = true;
     package = pkgs.postgresql_16;
@@ -75,7 +57,6 @@ in
     '';
   };
 
-  # Atticd サービス設定
   services.atticd = {
     enable = true;
 
@@ -116,15 +97,12 @@ in
     };
   };
 
-  # ストレージディレクトリの作成
-  # atticdはDynamicUserのため、rebuild時にユーザーが存在しない場合がある
-  # root所有で作成し、サービス側のReadWritePathsで書き込み権限を確保
-  # /var/lib/atticdはDynamicUserが自動管理（symlink → private/atticd）するため不要
+  # atticd は DynamicUser のため rebuild 時にユーザーが不在なことがある。
+  # root 所有で作成し、ReadWritePaths で atticd に書き込みだけ許可する
   systemd.tmpfiles.rules = [
     "d ${storagePath} 0755 root root -"
   ];
 
-  # systemd設定の調整（Atticモジュールのデフォルトを拡張）
   systemd.services.atticd = {
     after = [
       "postgresql.service"
@@ -137,6 +115,5 @@ in
     };
   };
 
-  # ファイアウォール設定
   networking.firewall.allowedTCPPorts = [ port ];
 }

@@ -1,15 +1,4 @@
-/*
-  Darwin基本設定モジュール
-
-  macOSシステムの基本設定を提供します：
-  - システムバージョン設定
-  - Nix設定（sandbox、trusted-users）
-  - Homebrew PATH設定
-*/
 {
-  config,
-  lib,
-  pkgs,
   sharedConfig,
   ...
 }:
@@ -22,8 +11,8 @@ in
   system.primaryUser = cfg.users.darwin.username;
 
   nix.settings = {
-    # macOS推奨: Fixed-output derivations（npm依存関係など）をサンドボックスから除外
-    # これによりDNS解決とネットワークアクセスが正常に動作する
+    # Fixed-output derivations (npm依存関係など) をサンドボックスから除外し、
+    # DNS解決とネットワークアクセスを通す (macOS 推奨設定)
     sandbox = "relaxed";
     trusted-users = [
       "@admin"
@@ -34,7 +23,7 @@ in
       "_github-runner"
     ];
 
-    # Attic バイナリキャッシュ設定（プライベート）
+    # Attic バイナリキャッシュ（プライベート）
     substituters = [
       "https://cache.nixos.org"
       "https://${cfg.attic.domain}/main"
@@ -45,15 +34,12 @@ in
       cfg.attic.trustedPublicKey
     ];
 
-    # プライベートキャッシュの認証用netrc
-    # Darwin: ~/.netrcに手動で設定する必要があります
-    # netrc-file = "/run/secrets/nix-netrc";  # NixOS only
+    # プライベートキャッシュの認証情報は Darwin では ~/.netrc に手動で置く
   };
 
   nix.extraOptions = ''
     experimental-features = nix-command flakes
   '';
 
-  # Homebrewのパスを環境変数に追加
   environment.systemPath = [ "/opt/homebrew/bin" ];
 }

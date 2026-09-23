@@ -1,30 +1,11 @@
--- 差分レビュー。この設定の主目的。
---
--- 想定する流れ:
---   1. どこで nvim を開いていても <Space>gw でワークツリーを選ぶ
---      (Claude のワークツリーは scratchpad 配下の深いパスにあり cd が現実的でないため。
---       既にワークツリーの中に居るなら <Space>gd で直接始めてよい)
---   2. 左 = ベースブランチ / 右 = 実ファイル で差分を眺める
---   3. 気になる所はその場で直す (右ペインは実ファイルなので LSP も編集も効く)
---
--- ■ --imply-local が要
---   `:DiffviewOpen main...HEAD` は既定だと左右とも git のオブジェクトを読み出した
---   read-only バッファになり、LSP が刺さらず編集もできない。--imply-local を付けると
---   右ペインがワークツリーの実ファイルになり、診断・定義ジャンプ・保存が全部通る。
---   要件の「LSP や静的解析も効いてほしい」「自分で編集もできるように」は
---   まるごとこのフラグに乗っている。default_args で常に付ける。
-
 local M = {}
 
 --- git コマンドを走らせて stdout の行リストを返す。失敗時は nil。
---- vim.fn.systemlist ではなく vim.system を使うのは、前者が stderr を
---- stdout に混ぜてしまうため。exit 0 で警告だけ吐く git (壊れた ref など) に
---- 当たると警告文が結果として返り、判定を誤る。
+--- stderr を混ぜてしまう vim.fn.systemlist ではなく vim.system を使う。
 ---@param args string[]
 ---@return string[]|nil
 local function git(args)
-  -- 発行するのは rev-parse / worktree list / config だけでネットワークも
-  -- 対話プロンプトも無いが、万一固まったときに nvim ごと止まらないよう時間を切る。
+  -- 固まったときに nvim ごと止まらないよう5秒で打ち切る
   local res = vim.system(vim.list_extend({ "git" }, args), { text = true }):wait(5000)
   if res.code ~= 0 then
     return nil
@@ -33,8 +14,7 @@ local function git(args)
 end
 
 --- レビューの基準にするリビジョンを求める。
---- origin/HEAD が張られていればそれを使い、無ければ順に候補を試す。
---- (git clone 直後や CI の checkout では origin/HEAD が無いことが珍しくない)
+--- origin/HEAD が無ければ候補を順に試す (clone 直後は張られていないことがある)。
 ---@return string
 function M.base_ref()
   local head = git({ "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD" })
@@ -49,17 +29,13 @@ function M.base_ref()
   return "HEAD"
 end
 
--- ── diffview ────────────────────────────────────────────────────────────
 local actions = require("diffview.actions")
 
 require("diffview").setup({
-  -- 変更行の中の「実際に変わった部分」だけを強調する。
-  -- これが無いと行まるごとが同じ色になり、1 文字の変更を見落とす
   enhanced_diff_hl = true,
 
   view = {
     default = { layout = "diff2_horizontal", winbar_info = true },
-    -- コンフリクト解決時は 3 ペイン (自分の変更 / ベース / 相手の変更)
     merge_tool = { layout = "diff3_mixed", disable_diagnostics = false },
     file_history = { layout = "diff2_horizontal", winbar_info = true },
   },
@@ -69,14 +45,15 @@ require("diffview").setup({
     win_config = { position = "left", width = 38 },
   },
 
-  -- 右ペインを実ファイルにする。詳細はこのファイル冒頭のコメント
+  -- 既定だと左右とも read-only バッファになり LSP も編集も効かない。
+  -- --imply-local で右ペインをワークツリーの実ファイルにする。
   default_args = {
     DiffviewOpen = { "--imply-local" },
     DiffviewFileHistory = { "--imply-local" },
   },
 
   hooks = {
-    -- 折り返すと左右の行が縦に揃わなくなるが、差分では「見えない」より
+    -- 折り返すと左右の行が揃わなくなるが、差分では「見えない」より
     -- 「ずれる」を採る。<leader>uw で左右まとめて戻せる。
     diff_buf_win_enter = function(_, winid, _)
       vim.wo[winid].wrap = true
@@ -86,25 +63,20 @@ require("diffview").setup({
   },
 
   keymaps = {
-    -- view は差分の左右ペインそのもの。右ペインは編集可能な実ファイルなので、
-    -- ここに q を割り当てない。マクロ記録 (q) が使えなくなるうえ、
-    -- 編集中の誤爆でレビューごと閉じてしまう。閉じるのは <leader>gq に統一する。
     view = {
       { "n", "<Tab>", actions.select_next_entry, { desc = "次のファイル" } },
       { "n", "<S-Tab>", actions.select_prev_entry, { desc = "前のファイル" } },
       { "n", "<leader>gp", actions.focus_files, { desc = "ファイル一覧へ移動" } },
       { "n", "<leader>gq", "<Cmd>DiffviewClose<CR>", { desc = "差分ビューを閉じる" } },
-      -- 既定の <leader>uw は今のウィンドウしか変えない。差分は左右揃っていないと
-      -- 読めないので、差分ビューの中では両ペインまとめて切り替える方を優先する
+      -- 右ペインは編集可能な実ファイルなので q は割り当てない
+      -- (マクロ記録の q と衝突し、編集中の誤爆で閉じてしまう)
       { "n", "<leader>uw", function() M.toggle_wrap() end, { desc = "折り返し (左右まとめて)" } },
       { "n", "g?", actions.help("view"), { desc = "キー一覧" } },
     },
     file_panel = {
       { "n", "<Tab>", actions.select_next_entry, { desc = "次のファイル" } },
       { "n", "<S-Tab>", actions.select_prev_entry, { desc = "前のファイル" } },
-      -- <cr> は既定のまま (開くだけでカーソルは一覧に残る)。
-      -- 一覧を上から順に見ていく間にカーソルが飛ぶと戻ってくるのが面倒なので、
-      -- ペインへ移るのは <C-l> か下の <leader>gp と、明示的に叩いたときだけにする
+      -- <cr> は既定のまま (開くだけでカーソルは一覧に残る)
       { "n", "<leader>gp", actions.focus_entry, { desc = "差分ペインへ移動" } },
       { "n", "q", "<Cmd>DiffviewClose<CR>", { desc = "差分ビューを閉じる" } },
       { "n", "<leader>gq", "<Cmd>DiffviewClose<CR>", { desc = "差分ビューを閉じる" } },
@@ -119,8 +91,7 @@ require("diffview").setup({
 })
 
 --- 差分ペインの折り返しをまとめて切り替える。
---- 片側だけ折り返すと左右の行がまったく対応しなくなるので、
---- 今のタブの diff ウィンドウを全部同じ状態にする。
+--- 片側だけ折り返すと左右の行が対応しなくなるため、今のタブの diff ウィンドウを揃える。
 function M.toggle_wrap()
   local wins = vim.tbl_filter(function(win) return vim.wo[win].diff end, vim.api.nvim_tabpage_list_wins(0))
   if #wins == 0 then
@@ -134,7 +105,6 @@ function M.toggle_wrap()
 end
 
 --- ブランチ全体 (ベースとの共通祖先から現在のワークツリーまで) をレビューする。
---- コミット済みの変更と未コミットの変更の両方が 1 画面に出る。
 function M.review_branch()
   local base = M.base_ref()
   if base == "HEAD" then
@@ -142,8 +112,7 @@ function M.review_branch()
     vim.cmd("DiffviewOpen")
     return
   end
-  -- --imply-local は default_args から入る。ここで重ねて渡さないのは、
-  -- 主経路が default_args の設定を実際に通ることを保証するため。
+  -- --imply-local は default_args から入るのでここでは重ねない
   vim.cmd(("DiffviewOpen %s...HEAD"):format(base))
 end
 
@@ -158,35 +127,22 @@ function M.review_commits()
   vim.cmd(("DiffviewFileHistory --range=%s...HEAD --right-only --no-merges"):format(base))
 end
 
--- ── ワークツリー選択 ────────────────────────────────────────────────────
--- Claude が切るワークツリーは scratchpad 配下の深いパスにあるため、
--- レビューのたびに cd するのは現実的でない。親リポジトリと全 submodule の
--- ワークツリーを一覧して、選んだら移動 + レビュー開始まで一気に行う。
-
 --- 末尾のスラッシュを落とす。git の出力と自前で組んだパスを突き合わせるとき、
---- 片方だけに / が付いていると不一致になるため。
---- vim.fs.normalize は使わない (既定で $VAR を展開するので、パスに $ を含む
---- リポジトリを壊す)。--path-format=absolute の出力は既に正規形。
+--- 片方だけ / が付いていると不一致になるため。
 ---@param path string
 ---@return string
 local function strip_slash(path) return (path:gsub("(.)/+$", "%1")) end
 
---- 探索の起点になる親リポジトリ (superproject) を求める。
---- cwd がどこにあるかで取り方が変わる。公開しているのは検証しやすくするため。
+--- 探索の起点になる親リポジトリ (superproject) を求める。cwd の位置で取り方が変わる。
 ---@return string|nil
 function M.workspace_root()
-  -- ① submodule の *チェックアウト* 内 (親リポジトリ配下に submodule を持つ構成)
   local super = git({ "rev-parse", "--show-superproject-working-tree" })
   if super and super[1] and super[1] ~= "" then
     return super[1]
   end
 
-  -- ② ワークツリーの中にいる場合。そこは元の作業ツリーの外にあるので ① は空を返す。
-  --    共有 gitdir の形から、どのリポジトリのワークツリーかを判別する。
-  --      submodule のワークツリー  : <親>/.git/modules/<name>
-  --      親リポジトリのワークツリー: <親>/.git
-  --    後者を拾わないと、ワークツリー自身が起点になって submodule が
-  --    1 つも出てこない (この機能の主目的が消える)。
+  -- ワークツリー内では superproject が空を返すため、共有 gitdir のパス形
+  -- (<親>/.git/modules/<name> か <親>/.git) からどのリポジトリのワークツリーか判別する
   local common = git({ "rev-parse", "--path-format=absolute", "--git-common-dir" })
   if common and common[1] and common[1] ~= "" then
     local dir = strip_slash(common[1])
@@ -199,7 +155,6 @@ function M.workspace_root()
     end
   end
 
-  -- ③ 素のリポジトリ (親リポジトリ自身など)
   local top = git({ "rev-parse", "--show-toplevel" })
   if top and top[1] and top[1] ~= "" then
     return top[1]
@@ -227,7 +182,7 @@ local function parse_worktrees(lines)
   return out
 end
 
---- 親リポジトリと全 submodule のワークツリーを集める。公開しているのは検証しやすくするため。
+--- 親リポジトリと全 submodule のワークツリーを集める。
 ---@param root string
 ---@return { repo: string, branch: string, path: string }[]
 function M.collect_worktrees(root)
@@ -236,11 +191,8 @@ function M.collect_worktrees(root)
   ---@param dir string 走査する作業ツリー
   ---@param label string 一覧に出すリポジトリ名
   local function add(dir, label)
-    -- toplevel と共有 gitdir を 1 プロセスで取る。
-    -- 未初期化の submodule ディレクトリでは git が上位リポジトリまで遡るため、
-    -- `worktree list` が「親リポジトリのワークツリー一覧」を返してしまう。
-    -- そのまま採ると submodule 名のラベルで別リポジトリへ連れて行かれるので、
-    -- toplevel が自分自身であることを確かめてから採用する。
+    -- 未初期化の submodule では git が上位リポジトリまで遡ってしまうため、
+    -- toplevel が dir 自身と一致することを確かめてから採用する
     local info = git({ "-C", dir, "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir" })
     if not info or #info < 2 then
       return
@@ -258,11 +210,8 @@ function M.collect_worktrees(root)
     for _, wt in ipairs(parse_worktrees(lines)) do
       local path = wt.path
       -- submodule の主ワークツリーは実チェックアウトではなく共有 gitdir として
-      -- 報告される。そのまま開くと中身の無いディレクトリに移動してしまうので
-      -- 読み替える。前方一致ではなく gitdir の実値と突き合わせるのは、
-      -- 入れ子 submodule だと <親>/.git/modules/<外>/modules/<内> になり
-      -- 前方一致では判定を誤るため。
-      -- (通常のリポジトリでは gitdir は <top>/.git なので一致せず素通りする)
+      -- 報告されるため、gitdir の実値と突き合わせて実パスに読み替える
+      -- (前方一致だと入れ子 submodule で誤判定する)
       if path == gitdir then
         path = top
       end
@@ -274,8 +223,7 @@ function M.collect_worktrees(root)
 
   add(root, vim.fn.fnamemodify(root, ":t"))
 
-  -- submodule のパスは .gitmodules から 1 プロセスで取る
-  -- (git submodule foreach は submodule ごとにプロセスを起こすので遅い)
+  -- submodule ごとにプロセスを起こす git submodule foreach を避け、.gitmodules を直読みする
   local conf = git({ "-C", root, "config", "--file", root .. "/.gitmodules", "--get-regexp", "submodule\\..*\\.path" })
   for _, line in ipairs(conf or {}) do
     local sub = line:match("^%S+%s+(.+)$")
@@ -285,7 +233,6 @@ function M.collect_worktrees(root)
     end
   end
 
-  -- Claude が切ったブランチを上に出す。main / master は下。
   local function rank(it) return (it.branch == "main" or it.branch == "master") and 1 or 0 end
   table.sort(items, function(a, b)
     if rank(a) ~= rank(b) then
@@ -317,8 +264,6 @@ function M.pick_worktree()
     return
   end
 
-  -- 列を揃える。ブランチ名は長くなりうるので上限を設けて
-  -- パスが右へ押し出されすぎないようにする。
   local repo_w, branch_w = 0, 0
   for _, it in ipairs(items) do
     repo_w = math.max(repo_w, vim.fn.strdisplaywidth(it.repo))
@@ -333,7 +278,6 @@ function M.pick_worktree()
   local function fit(text, want)
     local w = vim.fn.strdisplaywidth(text)
     if w > want then
-      -- … の 1 桁と、隣の列との間隔 1 桁を確保する
       while w > want - 2 and #text > 0 do
         text = vim.fn.strcharpart(text, 0, vim.fn.strchars(text) - 1)
         w = vim.fn.strdisplaywidth(text)
@@ -349,9 +293,6 @@ function M.pick_worktree()
       local finder_items = {}
       for _, it in ipairs(items) do
         finder_items[#finder_items + 1] = {
-          -- text は絞り込みの対象。リポジトリ名・ブランチ名に加えて
-          -- ワークツリーのディレクトリ名でも引けるようにする
-          -- (Claude はディレクトリ名を機能名で付けるので手掛かりになる)
           text = table.concat({ it.repo, it.branch, vim.fn.fnamemodify(it.path, ":t") }, " "),
           repo = it.repo,
           branch = it.branch,
@@ -364,13 +305,9 @@ function M.pick_worktree()
       return {
         { fit(item.repo, repo_w + 1), "SnacksPickerDirectory" },
         { fit(item.branch, branch_w + 1), "SnacksPickerGitBranch" },
-        -- パスは補助情報なので pathshorten で圧縮して 1 行に収める
-        -- (末尾のワークツリー名だけは残るので判別できる)
         { vim.fn.pathshorten(vim.fn.fnamemodify(item.dir, ":~")), "SnacksPickerComment" },
       }
     end,
-    -- ワークツリーはパスとブランチが分かれば十分でプレビューする中身が無い。
-    -- preview = "none" だけでは枠が残るので layout 側で窓ごと落とす。
     preview = "none",
     layout = { preset = "dropdown", preview = false },
     confirm = function(picker, item)
@@ -378,39 +315,23 @@ function M.pick_worktree()
       if not item then
         return
       end
-      -- tcd (タブローカル) を使う。グローバル cd と違い他のタブを巻き込まず、
-      -- DiffviewOpen が開く新しいタブには継承される (実測で確認)。
-      -- 元のディレクトリに戻したくなったら :tcd - でよい。
-      --
-      -- vim.cmd.tcd(path) ではなく明示形なのは、:tcd が EX_XFILE で
-      -- パス中の % / # をファイル名として展開してしまい E499/E194 で
-      -- 落ちるため。magic を切ると % / # と空白は実パスのまま通る。
-      --
-      -- 既知の制約: パスに $ が含まれると :tcd が環境変数として展開し E344 になる。
-      -- magic も fnameescape もこれは止められない (vim.fn.chdir でも同じ)。
-      -- 止められるのは vim.uv.chdir だけだが、あちらはプロセス全体の cwd を
-      -- 変えるのでタブローカルでなくなる。ディレクトリ名に $ を含む
-      -- リポジトリは実運用に無いと判断して受容する。
+      -- タブローカルな :tcd を使う。明示形なのは % / # をファイル名展開させないため
+      -- (vim.cmd.tcd(path) だと E499/E194 で落ちる)
       vim.cmd({ cmd = "tcd", args = { item.dir }, magic = { file = false } })
       M.review_branch()
     end,
   })
 end
 
--- ── gitsigns ────────────────────────────────────────────────────────────
--- diffview が「差分を見る」モードなのに対し、gitsigns は
--- 「普通に編集しながら、どこが変わったかを常に横目で見る」モード。
 require("gitsigns").setup({
   signcolumn = true,
   numhl = false,
-  current_line_blame = false, -- <Space>hB でトグル
+  current_line_blame = false,
   preview_config = { border = "rounded" },
-  -- 差分の再計算間隔。options.lua の updatetime と揃えている
   update_debounce = 200,
 })
 
 --- gitsigns の比較対象を「直前のコミット」と「ベースブランチ」で切り替える。
---- ベースブランチにすると、編集画面のサインがそのままブランチ全体の差分になる。
 local base_mode = false
 function M.toggle_gitsigns_base()
   local gs = require("gitsigns")
@@ -426,15 +347,11 @@ function M.toggle_gitsigns_base()
   end
 end
 
--- ── octo (GitHub の PR を Neovim から扱う) ──────────────────────────────
--- gh CLI の認証を使う。未認証だとコマンド実行時にエラーになるだけで、
--- 起動そのものには影響しない。
 require("octo").setup({
   picker = "snacks",
   suppress_missing_scope = { projects_v2 = true },
 })
 
--- ── ユーザーコマンド ────────────────────────────────────────────────────
 vim.api.nvim_create_user_command("ReviewBranch", M.review_branch, {
   desc = "ベースブランチとの差分をレビューする",
 })

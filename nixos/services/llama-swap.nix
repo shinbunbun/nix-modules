@@ -1,38 +1,3 @@
-/*
-  llama-swap ベースの OpenAI 互換 model-swapping 推論プロキシ
-
-  機能:
-  - llama-swap を systemd で常駐し、単一 endpoint(:port) から OpenAI 互換 API を公開
-  - リクエストの model 名で複数の GGUF モデルを on-demand 起動/切替 (llama-server を子プロセスとして spawn)
-  - 各モデルは ttl で idle unload
-  - 任意で NVIDIA GPU デバイスアクセスを許可 (DynamicUser + PrivateDevices=false + DeviceAllow)
-  - DynamicUser + StateDirectory + 各種 Protect* で隔離
-
-  設計方針:
-  - 推論エンジン (llama-server) は serverPackage で差し替え可能 (CPU / CUDA ビルド等)
-  - モデル定義はホスト側が services.llamaSwap.models で与える (エンジン非依存の汎用モジュール)
-  - 従来の単一モデル常駐 (services.llamaCpp) に対し、本モジュールは複数モデルの動的切替を担う
-
-  使用方法:
-    services.llamaSwap = {
-      enable = true;
-      serverPackage = inputs.self.packages.x86_64-linux.llama-cpp-cuda;  # llama-server 提供元
-      enableNvidiaGpu = true;
-      openFirewall = true;
-      requiredPaths = [ "/var/lib/llama-cpp/models/foo.gguf" ];  # 揃うまで起動抑制
-      models."foo" = {
-        args = [ "--model" "/var/lib/llama-cpp/models/foo.gguf" "--n-gpu-layers" "999" ];
-        aliases = [ "foo-alias" ];
-        ttl = 1800;
-      };
-    };
-
-  注意:
-  - モデルファイルは Nix derivation 化しない前提 (サイズのため手動配置)。requiredPaths に列挙した
-    ファイルが揃うまで ConditionPathExists で起動をスキップする。
-  - modelsDir (既定 /var/lib/llama-cpp/models) は tmpfiles で作成する。StateDirectory の
-    private 移送 gotcha を避けるため親 (/var/lib/llama-cpp) は宣言しない。
-*/
 {
   config,
   pkgs,
@@ -45,15 +10,9 @@ let
 
   serverBin = "${cfg.serverPackage}/bin/llama-server";
 
-  # llama-swap の設定を生成する。cmd の "''${PORT}" は llama-swap が各モデルへ割り当てる内部
-  # ポートに実行時展開するプレースホルダ (Nix ではリテラル ${PORT} として埋め込む)。cmd は
-  # 空白区切り単一行だが llama-swap がシェル的にトークン化する。JSON 等クォートが必要な引数は
-  # ホスト側が args 要素として単一引用符付きで渡すこと (例: "'{\"enable_thinking\":false}'")。
-  #
-  # m.port を設定した場合は ''${PORT} の自動割当ではなく固定ポートで llama-server を起動し、
-  # llama-swap の proxy をそのポートへ向ける。llama-swap の /metrics は host/GPU 統計のみで
-  # 推論 tps (llamacpp:*) を出さないため、llama-server の /metrics を外部 Prometheus から
-  # 直接 scrape したいときに使う (別途 args に "--host" "0.0.0.0" と openFirewall が必要)。
+  # cmd の "''${PORT}" (Nix ではリテラル埋め込み) は llama-swap が実行時に割り当てる
+  # ポートのプレースホルダ。空白区切りでシェル的にトークン化されるため、JSON 等
+  # クォートが必要な引数は args 要素として単一引用符付きで渡すこと
   modelToConfig =
     _name: m:
     let
@@ -68,9 +27,10 @@ let
           portArg
         ]
       );
-      ttl = m.ttl;
+      inherit (m) ttl;
     }
     // lib.optionalAttrs (m.aliases != [ ]) { inherit (m) aliases; }
+    // lib.optionalAttrs (m.env != [ ]) { inherit (m) env; }
     // lib.optionalAttrs (m.port != null) {
       proxy = "http://127.0.0.1:${toString m.port}";
     };
@@ -194,6 +154,16 @@ in
               default = 1800;
               description = "idle unload までの秒数。";
             };
+            env = lib.mkOption {
+              type = lib.types.listOf lib.types.str;
+              default = [ ];
+              example = [ "LLAMA_DEC_SLOTS=0" ];
+              description = ''
+                この model の llama-server にだけ渡す環境変数 ("KEY=VALUE")。
+                systemd.services.llama-swap.environment は全 model 共通なので、
+                model ごとに変えたい値はこちらに置く。
+              '';
+            };
             port = lib.mkOption {
               type = lib.types.nullOr lib.types.port;
               default = null;
@@ -238,8 +208,9 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    # StateDirectory の private 移送 gotcha を避けるため親 (modelsDir の親) は宣言せず
-    # models ディレクトリ 1 行だけにする (services.llamaCpp モジュールと同じ理由)。
+    # DynamicUser + StateDirectory では実体が /var/lib/private/ 配下へ移され /var/lib/<name>
+    # は symlink になる。親を tmpfiles で d 宣言すると resetup のたびに衝突するので、
+    # 親 (modelsDir の親) は宣言せず models ディレクトリ 1 行だけにする。
     systemd.tmpfiles.rules = [
       "d ${cfg.modelsDir} 0755 root root -"
     ];

@@ -1,19 +1,4 @@
-/*
-  SOPS + WireGuard共通設定ヘルパー
-
-  このモジュールはNixOSとDarwinでWireGuard設定を
-  共通化するためのヘルパー関数を提供します：
-
-  mkSopsWireGuardConfig:
-  - SOPSを使用した秘密鍵管理
-  - WireGuardインターフェースの設定
-  - ピア設定とルーティング
-  - Darwin用の特別な設定対応
-
-  このヘルパーを使用することで、WireGuard設定の
-  重複を避け、一貫性を保ちます。
-*/
-{ inputs }:
+_:
 let
   mkSopsWireGuardConfig =
     {
@@ -82,10 +67,8 @@ let
         configFile = configPath;
       };
 
-      # wg-quickサービスの再起動時に既存のインターフェースを適切に処理
       systemd.services."wg-quick-${interfaceName}" = {
         preStart = lib.mkBefore ''
-          # 既存のインターフェースが存在する場合は削除
           if ${pkgs.iproute2}/bin/ip link show ${interfaceName} >/dev/null 2>&1; then
             ${pkgs.iproute2}/bin/ip link delete ${interfaceName} || true
           fi

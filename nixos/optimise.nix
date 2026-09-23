@@ -1,15 +1,4 @@
-/*
-  Nix最適化設定
-
-  ストアの自動最適化とガベージコレクションを設定し、
-  ディスク使用量を抑制します。
-*/
-{
-  config,
-  lib,
-  pkgs,
-  ...
-}:
+_:
 
 {
   nix.settings.auto-optimise-store = true;
