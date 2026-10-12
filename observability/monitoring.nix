@@ -131,11 +131,19 @@ in
           }
         );
         default = [
-          # comm ごとに集約 (top の COMMAND 列相当)。/nix/store パスは exe ではなく
-          # comm を使うことで剥がれる。cmdline=[".+"] でカーネルスレッドを除外する
           {
             name = "{{.Comm}}";
-            cmdline = [ ".+" ];
+            comm = [
+              "(sd-pam)"
+              "(udev-worker)"
+            ];
+          }
+          # comm ごとに集約 (top の COMMAND 列相当)。/nix/store パスは exe ではなく
+          # comm を使うことで剥がれる。cmdline が空のカーネルスレッドと、systemd が
+          # exec 前に付ける "(名前)" を除外し、exec 後の名前で数える
+          {
+            name = "{{.Comm}}";
+            cmdline = [ "^[^(]" ];
           }
         ];
         description = ''
@@ -143,6 +151,15 @@ in
           namedprocess_namegroup_* メトリクスの groupname ラベルを決める。
           設定構文は https://github.com/ncabatoff/process-exporter を参照。
           .Comm の代わりに .ExeBase を使うと 15 文字切り詰めを回避できる。
+        '';
+      };
+
+      trackChildren = mkOption {
+        type = types.bool;
+        default = false;
+        description = ''
+          process-exporter の -children。true だとどのルールにもマッチしない
+          プロセスを親の group に入れ、その groupname はプロセスの生存中固定される。
         '';
       };
     };
@@ -176,6 +193,7 @@ in
     services.prometheus.exporters.process = mkIf cfg.processExporter.enable {
       enable = true;
       port = cfg.processExporter.port;
+      extraFlags = [ "-children=${boolToString cfg.processExporter.trackChildren}" ];
       # submodule 化で未設定フィールドが null になるため、null を除いてから渡す
       settings.process_names = map (
         entry: filterAttrs (_: v: v != null) entry
