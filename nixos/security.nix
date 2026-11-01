@@ -9,6 +9,9 @@ in
 {
   security.polkit.enable = true;
 
+  # age-keygen は umask どおり 0644 で書くので、手で置いた鍵も root 専用に揃える
+  systemd.tmpfiles.rules = [ "z ${cfg.sops.keyFile} 0600 root root -" ];
+
   sops = {
     defaultSopsFile = "${inputs.self}/${cfg.sops.files.sshKeys}";
     age.keyFile = cfg.sops.keyFile;

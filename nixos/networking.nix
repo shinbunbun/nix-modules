@@ -1,4 +1,5 @@
 {
+  options,
   sharedConfig,
   ...
 }:
@@ -13,12 +14,26 @@ in
     cfg.networking.firewall.generalPort
   ];
 
+  # settings が無い nixpkgs (26.05 以前) でも評価できるよう旧オプションに切り替える
   services.avahi = {
     enable = true;
-    publish = {
-      enable = true;
-      addresses = true;
-      workstation = true;
-    };
-  };
+  }
+  // (
+    if options.services.avahi ? settings then
+      {
+        settings.publish = {
+          disable-publishing = false;
+          publish-addresses = true;
+          publish-workstation = true;
+        };
+      }
+    else
+      {
+        publish = {
+          enable = true;
+          addresses = true;
+          workstation = true;
+        };
+      }
+  );
 }
