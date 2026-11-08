@@ -14,7 +14,7 @@ in
   # 平文 HTTP が全インターフェースに出る状態にはせず、ホスト側で明示する
   config = lib.mkIf config.services.nextcloud.enable {
     services.nextcloud = {
-      package = pkgs.nextcloud33;
+      package = pkgs.nextcloud35;
       hostName = domain;
 
       config.dbtype = "sqlite";

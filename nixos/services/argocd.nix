@@ -127,10 +127,10 @@ let
           name = "install-ksops";
           image = argocdCfg.ksopsImage;
           command = [
-            "/bin/sh"
-            "-c"
+            "/usr/local/bin/ksops"
+            "install"
+            "/custom-tools"
           ];
-          args = [ "cp /usr/local/bin/ksops /custom-tools/ksops" ];
           volumeMounts = [
             {
               mountPath = "/custom-tools";
